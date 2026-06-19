@@ -22,7 +22,7 @@ $titre = $titre ?? 'Adopte un Compagnon';
             <?php if (est_connecte()): ?>
                 <?php if (a_role('admin')): ?>
                     <a href="admin.php">Administration</a>
-                <?php elseif (a_role('refuge')): ?>
+                <?php elseif (a_role('refuge', 'particulier')): ?>
                     <a href="mes-annonces.php">Mes annonces</a>
                 <?php endif; ?>
                 <a href="mes-demandes.php">Mes demandes</a>

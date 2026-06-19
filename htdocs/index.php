@@ -45,7 +45,7 @@ require __DIR__ . '/includes/header.php';
 <!-- ===================== HERO ===================== -->
 <section class="hero" style="padding:0;">
     <div class="container hero-content">
-        <span class="eyebrow">Adoption responsable</span>
+        <span class="eyebrow">Projet d'ecole</span>
         <h1>Offrez une seconde vie a un compagnon</h1>
         <p>Des centaines d'animaux attendent une famille dans nos refuges partenaires.
            Trouvez celui qui fera battre votre coeur.</p>

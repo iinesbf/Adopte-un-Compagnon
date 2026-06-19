@@ -22,7 +22,7 @@ CREATE TABLE utilisateur (
     prenom           VARCHAR(60)  NOT NULL,
     email            VARCHAR(150) NOT NULL UNIQUE,
     mot_de_passe     VARCHAR(255) NOT NULL,
-    role             ENUM('admin','refuge','visiteur') NOT NULL DEFAULT 'visiteur',
+    role             ENUM('admin','refuge','visiteur','particulier') NOT NULL DEFAULT 'visiteur',
     date_inscription DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
@@ -70,6 +70,7 @@ CREATE TABLE animal (
     id_espece           INT          NOT NULL,
     type_detenteur      ENUM('refuge','particulier') NOT NULL DEFAULT 'refuge',
     id_refuge           INT          DEFAULT NULL,
+    id_proprietaire     INT          DEFAULT NULL,  -- si particulier : compte qui gere l'annonce
     detenteur_nom       VARCHAR(120) DEFAULT NULL,
     detenteur_ville     VARCHAR(80)  DEFAULT NULL,
     detenteur_region    VARCHAR(80)  DEFAULT NULL,
@@ -85,7 +86,9 @@ CREATE TABLE animal (
     CONSTRAINT fk_animal_espece FOREIGN KEY (id_espece)
         REFERENCES espece(id_espece) ON DELETE RESTRICT,
     CONSTRAINT fk_animal_refuge FOREIGN KEY (id_refuge)
-        REFERENCES refuge(id_refuge) ON DELETE CASCADE
+        REFERENCES refuge(id_refuge) ON DELETE CASCADE,
+    CONSTRAINT fk_animal_proprietaire FOREIGN KEY (id_proprietaire)
+        REFERENCES utilisateur(id_utilisateur) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- ---------------------------------------------------------------------
@@ -118,20 +121,19 @@ INSERT INTO espece (nom, emoji, image, description) VALUES
 ('Reptile', '🦎', 'img/animaux/reptile/verdian-chua-68hC4vYTSFo-unsplash.jpg',     'Serpents, tortues, lezards et geckos');
 
 -- Utilisateurs (mot de passe de tous les comptes = "password")
+-- 6 comptes : un par role + les deux membres du binome.
 INSERT INTO utilisateur (nom, prenom, email, mot_de_passe, role) VALUES
-('Gestionnaire','Admin', 'admin@adoption.fr',       '$2y$12$29wtlFyWtUD.dxvQpEbhqeBd7JiLHiNQHqMpz0PX0DbqCZQ/xaq/.', 'admin'),
-('Dupont',   'Marie',   'refuge.spa@adoption.fr',  '$2y$12$29wtlFyWtUD.dxvQpEbhqeBd7JiLHiNQHqMpz0PX0DbqCZQ/xaq/.', 'refuge'),
-('Martin',   'Lucas',   'refuge.patte@adoption.fr','$2y$12$29wtlFyWtUD.dxvQpEbhqeBd7JiLHiNQHqMpz0PX0DbqCZQ/xaq/.', 'refuge'),
-('Bernard',  'Sophie',  'sophie@mail.fr',          '$2y$12$29wtlFyWtUD.dxvQpEbhqeBd7JiLHiNQHqMpz0PX0DbqCZQ/xaq/.', 'visiteur'),
-('Petit',    'Thomas',  'thomas@mail.fr',          '$2y$12$29wtlFyWtUD.dxvQpEbhqeBd7JiLHiNQHqMpz0PX0DbqCZQ/xaq/.', 'visiteur'),
--- Comptes dedies a l'enseignant (mot de passe = "test")
-('Grimej',   'Mohamed', 'professeur@adoption.fr',  '$2y$12$G94kKURGC1EPV1GUakCD1ebcGMDCtO5FMAiGvg5/q/ZwsQhYn4pEO', 'admin'),
-('Test',     'Admin',   'admin@esiee.fr',          '$2y$12$G94kKURGC1EPV1GUakCD1ebcGMDCtO5FMAiGvg5/q/ZwsQhYn4pEO', 'admin');
+('Gestionnaire','Admin',  'admin@adoption.fr',    '$2y$12$29wtlFyWtUD.dxvQpEbhqeBd7JiLHiNQHqMpz0PX0DbqCZQ/xaq/.', 'admin'),      -- 1
+('Refuge',     'Compte',  'refuge@adoption.fr',   '$2y$12$29wtlFyWtUD.dxvQpEbhqeBd7JiLHiNQHqMpz0PX0DbqCZQ/xaq/.', 'refuge'),     -- 2
+('Adoptant',   'Compte',  'adoptant@adoption.fr', '$2y$12$29wtlFyWtUD.dxvQpEbhqeBd7JiLHiNQHqMpz0PX0DbqCZQ/xaq/.', 'visiteur'),   -- 3
+('Ben Fakir',  'Ines',    'ines@adoption.fr',     '$2y$12$29wtlFyWtUD.dxvQpEbhqeBd7JiLHiNQHqMpz0PX0DbqCZQ/xaq/.', 'admin'),      -- 4
+('Mahroug',    'Rihane',  'rihane@adoption.fr',   '$2y$12$29wtlFyWtUD.dxvQpEbhqeBd7JiLHiNQHqMpz0PX0DbqCZQ/xaq/.', 'visiteur'),   -- 5
+('Durand',     'Sophie',  'sophie@adoption.fr',   '$2y$12$29wtlFyWtUD.dxvQpEbhqeBd7JiLHiNQHqMpz0PX0DbqCZQ/xaq/.', 'particulier');-- 6
 
 -- Refuges (avec region et coordonnees GPS pour la carte)
 INSERT INTO refuge (nom, adresse, ville, code_postal, region, latitude, longitude, telephone, email, description, id_utilisateur) VALUES
 ('Refuge SPA de Gennevilliers', '30 Av. du Gen. de Gaulle', 'Gennevilliers', '92230', 'Ile-de-France',                48.9270000, 2.2940000, '01 47 98 57 40', 'spa92@adoption.fr',   'Le plus grand refuge d''Ile-de-France.', 2),
-('Le Refuge de la Patte',       '12 Rue des Lilas',         'Paris',         '75019', 'Ile-de-France',                48.8830000, 2.3820000, '01 42 00 11 22', 'patte@adoption.fr',   'Petite structure associative au coeur de Paris.', 3),
+('Le Refuge de la Patte',       '12 Rue des Lilas',         'Paris',         '75019', 'Ile-de-France',                48.8830000, 2.3820000, '01 42 00 11 22', 'patte@adoption.fr',   'Petite structure associative au coeur de Paris.', 2),
 ('Refuge des 4 Pattes',         '5 Route de Lyon',          'Montreuil',     '93100', 'Ile-de-France',                48.8610000, 2.4410000, '01 48 70 00 00', 'quatrepattes@adoption.fr', 'Accueille chiens, chats et NAC.', NULL),
 ('Arche de Noe 78',             '8 Chemin du Bois',         'Versailles',    '78000', 'Ile-de-France',                48.8010000, 2.1300000, '01 39 50 12 34', 'arche78@adoption.fr', 'Specialise dans les animaux ages.', NULL),
 ('Refuge SPA de Marseille',     '1 Bd Animalier',           'Marseille',     '13014', 'Provence-Alpes-Cote d''Azur',  43.3360000, 5.3900000, '04 91 00 00 00', 'spa13@adoption.fr',   'Refuge du sud de la France.', NULL),
@@ -192,7 +194,7 @@ INSERT INTO animal (nom, id_espece, type_detenteur, id_refuge, detenteur_nom, de
 
 -- ----- OISEAUX (espece 4) -----
 INSERT INTO animal (nom, id_espece, type_detenteur, id_refuge, detenteur_nom, detenteur_ville, detenteur_region, race, age_annees, sexe, sterilise, ancien_proprietaire, description, photo, statut) VALUES
-('Kiwi',    4, 'particulier', NULL, 'M. Simon',   'Paris',     'Ile-de-France',        'Perruche ondulee',  1, 'F', 0, 'M. Simon',  'Petite perruche apprivoisee.', 'img/animaux/oiseau/danielle-claude-belanger-fl41ilfPOt0-unsplash.jpg', 'disponible'),
+('Kiwi',    4, 'particulier', NULL, 'M. Simon',   'Paris',     'Ile-de-France',        'Perruche ondulee',  1, 'F', 0, 'M. Simon',  'Petite perruche apprivoisee.', 'img/animaux/oiseau/danielle-belanger-fl41ilfPOt0-unsplash.jpg', 'disponible'),
 ('Rio',     4, 'refuge',      5, NULL, NULL, NULL, 'Ara rouge',               12, 'M', 0, 'Cirque',          'Ara recueilli, tres bavard.', 'img/animaux/oiseau/florian-k-mhVhHGllKIM-unsplash.jpg', 'disponible'),
 ('Mango',   4, 'refuge',      6, NULL, NULL, NULL, 'Ara bleu et or',          15, 'M', 0, NULL,              'Magnifique ara, demande de l''espace.', 'img/animaux/oiseau/karim-manjra-0oCZLHIHBns-unsplash.jpg', 'disponible'),
 ('Azur',    4, 'refuge',      6, NULL, NULL, NULL, 'Ara bleu et or',          10, 'F', 0, NULL,              'Femelle ara calme.', 'img/animaux/oiseau/karim-manjra-4euubO4CasU-unsplash.jpg', 'reserve'),
@@ -219,8 +221,20 @@ INSERT INTO animal (nom, id_espece, type_detenteur, id_refuge, detenteur_nom, de
 ('Sunny',   6, 'particulier', NULL, 'M. Roux',    'Lille',     'Hauts-de-France',      'Gecko leopard', 3, 'F', 0, 'M. Roux',    'Gecko leopard facile a entretenir.', 'img/animaux/reptile/suri-huang-cHP9WBFKm9o-unsplash.jpg', 'disponible'),
 ('Leo',     6, 'refuge',      7, NULL, NULL, NULL, 'Gecko leopard',          2, 'M', 0, NULL,           'Jeune gecko leopard curieux.', 'img/animaux/reptile/verdian-chua-68hC4vYTSFo-unsplash.jpg', 'disponible');
 
+-- Le compte particulier "Sophie" (id 6) gere quelques animaux qui sont a elle.
+UPDATE animal
+   SET id_proprietaire = 6, detenteur_nom = 'Sophie Durand',
+       detenteur_ville = 'Paris', detenteur_region = 'Ile-de-France'
+ WHERE nom IN ('Mochi', 'Kiwi', 'Pascal');
+
+-- Les autres animaux "de particuliers" du jeu de test sont rattaches a un refuge.
+UPDATE animal
+   SET type_detenteur = 'refuge', id_refuge = 2,
+       detenteur_nom = NULL, detenteur_ville = NULL, detenteur_region = NULL
+ WHERE type_detenteur = 'particulier' AND id_proprietaire IS NULL;
+
 -- Demandes d'adoption de test
 INSERT INTO demande_adoption (id_animal, id_utilisateur, message, statut) VALUES
-(1, 4, 'Bonjour, j''ai un grand jardin, Rex serait heureux chez nous !', 'en_attente'),
-(10, 5, 'Je recherche un chat sociable, Tigrou me parait parfait.', 'acceptee'),
-(2, 5, 'Je suis tres sportif, Bandit me conviendrait bien.', 'en_attente');
+(1, 5, 'Bonjour, j''ai un grand jardin, Rex serait heureux chez nous !', 'en_attente'),  -- Rihane -> Rex (refuge)
+(10, 3, 'Je recherche un chat sociable, Tigrou me parait parfait.', 'acceptee'),         -- Adoptant -> Tigrou (refuge)
+(3, 5, 'Bonjour, votre carlin Mochi a l''air adorable, je serais ravie de l''adopter.', 'en_attente'); -- Rihane -> Mochi (Sophie)

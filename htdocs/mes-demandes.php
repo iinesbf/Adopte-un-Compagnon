@@ -5,10 +5,10 @@ exiger_connexion();
 $titre = 'Mes demandes';
 
 $uid  = user()['id'];
-// Seul un REFUGE recoit des demandes sur ses propres animaux (a accepter/refuser ici).
-// L'admin, lui, gere la vue GLOBALE de toutes les demandes dans la page Administration ;
+// Un REFUGE et un PARTICULIER recoivent des demandes sur leurs propres animaux
+// (a accepter/refuser ici). L'admin gere la vue GLOBALE dans la page Administration ;
 // sa page "Mes demandes" reste donc personnelle, comme pour tout utilisateur.
-$gere = a_role('refuge');
+$gere = a_role('refuge', 'particulier');
 
 // ---------------------------------------------------------------------
 //  Traitement : accepter / refuser une demande RECUE (refuge / admin)
@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_demande'], $_POST[
 
     if (in_array($action, ['acceptee', 'refusee'], true)) {
         $chk = $pdo->prepare("
-            SELECT a.id_animal, r.id_utilisateur
+            SELECT a.id_animal, a.id_proprietaire, r.id_utilisateur AS refuge_user
             FROM demande_adoption d
             JOIN animal a ON a.id_animal = d.id_animal
             LEFT JOIN refuge r ON r.id_refuge = a.id_refuge
@@ -29,7 +29,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_demande'], $_POST[
         $chk->execute(['id' => $idd]);
         $row = $chk->fetch();
 
-        if ($row && (int) $row['id_utilisateur'] === $uid) {
+        // L'utilisateur doit etre le refuge proprietaire OU le particulier proprietaire de l'animal
+        $aDroit = $row && (((int) $row['refuge_user'] === $uid) || ((int) $row['id_proprietaire'] === $uid));
+        if ($aDroit) {
             $pdo->prepare("UPDATE demande_adoption SET statut = :s WHERE id_demande = :id")
                 ->execute(['s' => $action, 'id' => $idd]);
             if ($action === 'acceptee') {
@@ -50,16 +52,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['id_demande'], $_POST[
 // ---------------------------------------------------------------------
 $recues = [];
 if ($gere) {
-    // Demandes recues sur les animaux des refuges geres par cet utilisateur
+    // Un refuge filtre sur ses refuges ; un particulier filtre sur les animaux qu'il possede.
+    $condition = a_role('particulier') ? "a.id_proprietaire = :uid" : "r.id_utilisateur = :uid";
     $st = $pdo->prepare("
         SELECT d.id_demande, d.message, d.statut, d.date_demande,
-               a.id_animal, a.nom AS animal, r.nom AS refuge,
+               a.id_animal, a.nom AS animal,
+               COALESCE(r.nom, CONCAT('Particulier : ', a.detenteur_nom)) AS refuge,
                u.prenom, u.nom, u.email
         FROM demande_adoption d
         JOIN animal a      ON a.id_animal = d.id_animal
-        JOIN refuge r      ON r.id_refuge = a.id_refuge
+        LEFT JOIN refuge r ON r.id_refuge = a.id_refuge
         JOIN utilisateur u ON u.id_utilisateur = d.id_utilisateur
-        WHERE r.id_utilisateur = :uid
+        WHERE $condition
         ORDER BY d.statut = 'en_attente' DESC, d.date_demande DESC
     ");
     $st->execute(['uid' => $uid]);

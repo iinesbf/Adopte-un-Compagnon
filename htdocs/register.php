@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email  = trim($_POST['email'] ?? '');
     $mdp    = $_POST['mot_de_passe'] ?? '';
     $mdp2   = $_POST['mot_de_passe2'] ?? '';
-    $role   = ($_POST['role'] ?? 'visiteur') === 'refuge' ? 'refuge' : 'visiteur';
+    $role   = in_array($_POST['role'] ?? '', ['refuge', 'particulier'], true) ? $_POST['role'] : 'visiteur';
     $nom_refuge   = trim($_POST['nom_refuge'] ?? '');
     $ville_refuge = trim($_POST['ville_refuge'] ?? '');
 
@@ -56,6 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             connecter($u);
             if ($role === 'refuge') {
                 flash('Compte refuge cree ! Votre refuge "' . $nom_refuge . '" doit etre valide par un administrateur avant de pouvoir publier des annonces.');
+            } elseif ($role === 'particulier') {
+                flash('Compte particulier cree ! Vous pouvez des maintenant proposer vos animaux a l\'adoption depuis « Mes annonces ».');
             } else {
                 flash('Compte cree avec succes. Bienvenue ' . $prenom . ' !');
             }
@@ -89,6 +91,7 @@ require __DIR__ . '/includes/header.php';
                 <label for="role">Type de compte</label>
                 <select id="role" name="role" onchange="document.getElementById('refuge-fields').style.display = this.value==='refuge' ? 'block' : 'none';">
                     <option value="visiteur">Adoptant (je souhaite adopter)</option>
+                    <option value="particulier" <?= ($_POST['role'] ?? '') === 'particulier' ? 'selected' : '' ?>>Particulier (je propose mon animal)</option>
                     <option value="refuge" <?= ($_POST['role'] ?? '') === 'refuge' ? 'selected' : '' ?>>Refuge (je publie des annonces)</option>
                 </select>
             </div>

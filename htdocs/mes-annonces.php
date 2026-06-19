@@ -1,10 +1,11 @@
 <?php
 require_once __DIR__ . '/connexion.php';
 require_once __DIR__ . '/includes/auth.php';
-exiger_role('refuge', 'admin');
+exiger_role('refuge', 'admin', 'particulier');
 $titre = 'Mes annonces';
 
-// Un refuge ne voit que ses animaux ; l'admin voit tout.
+// L'admin voit tout ; un refuge voit les animaux de ses refuges ;
+// un particulier voit les animaux qu'il a publies lui-meme.
 if (a_role('admin')) {
     $animaux = $pdo->query("
         SELECT a.*, e.nom AS espece,
@@ -14,6 +15,16 @@ if (a_role('admin')) {
         LEFT JOIN refuge r ON r.id_refuge = a.id_refuge
         ORDER BY a.date_publication DESC
     ")->fetchAll();
+} elseif (a_role('particulier')) {
+    $stmt = $pdo->prepare("
+        SELECT a.*, e.nom AS espece, CONCAT('Particulier : ', a.detenteur_nom) AS refuge
+        FROM animal a
+        JOIN espece e ON e.id_espece = a.id_espece
+        WHERE a.id_proprietaire = :uid
+        ORDER BY a.date_publication DESC
+    ");
+    $stmt->execute(['uid' => user()['id']]);
+    $animaux = $stmt->fetchAll();
 } else {
     $stmt = $pdo->prepare("
         SELECT a.*, e.nom AS espece, r.nom AS refuge
@@ -31,7 +42,7 @@ require __DIR__ . '/includes/header.php';
 ?>
 <div class="page-head">
     <div class="container" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
-        <div><h1>Mes annonces</h1><p>Gerez les animaux a l'adoption de votre refuge.</p></div>
+        <div><h1>Mes annonces</h1><p>Gerez les animaux que vous proposez a l'adoption.</p></div>
         <a href="annonce-form.php" class="btn btn-light">+ Nouvelle annonce</a>
     </div>
 </div>

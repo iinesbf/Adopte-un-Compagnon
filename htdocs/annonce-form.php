@@ -1,16 +1,20 @@
 <?php
 require_once __DIR__ . '/connexion.php';
 require_once __DIR__ . '/includes/auth.php';
-exiger_role('refuge', 'admin');
+exiger_role('refuge', 'admin', 'particulier');
+
+$estParticulier = a_role('particulier');
 
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 $edition = $id > 0;
 $titre = $edition ? 'Modifier une annonce' : 'Nouvelle annonce';
 
-// Refuges accessibles : admin = tous ; refuge = uniquement les SIENS et VALIDES
+// Refuges proposes dans le formulaire (pas pour un particulier) :
+// admin = tous ; refuge = uniquement les siens et valides.
+$refuges = [];
 if (a_role('admin')) {
     $refuges = $pdo->query("SELECT id_refuge, nom FROM refuge ORDER BY nom")->fetchAll();
-} else {
+} elseif (a_role('refuge')) {
     $stmt = $pdo->prepare("SELECT id_refuge, nom FROM refuge WHERE id_utilisateur = :uid AND valide = 1 ORDER BY nom");
     $stmt->execute(['uid' => user()['id']]);
     $refuges = $stmt->fetchAll();
@@ -19,19 +23,25 @@ $especes = $pdo->query("SELECT id_espece, nom FROM espece ORDER BY nom")->fetchA
 
 // Valeurs par defaut
 $animal = [
-    'nom' => '', 'id_espece' => '', 'id_refuge' => '', 'race' => '',
+    'nom' => '', 'id_espece' => '', 'id_refuge' => '', 'detenteur_ville' => '', 'race' => '',
     'age_annees' => '', 'sexe' => '', 'sterilise' => 0, 'ancien_proprietaire' => '',
     'description' => '', 'statut' => 'disponible', 'photo' => null,
 ];
 
-// En edition : charger l'animal (et verifier la propriete)
+// En edition : charger l'animal et verifier que l'utilisateur a le droit
 if ($edition) {
-    $stmt = $pdo->prepare("SELECT a.* FROM animal a JOIN refuge r ON r.id_refuge = a.id_refuge WHERE a.id_animal = :id");
+    $stmt = $pdo->prepare("SELECT * FROM animal WHERE id_animal = :id");
     $stmt->execute(['id' => $id]);
     $animal = $stmt->fetch();
     if (!$animal) { flash('Annonce introuvable.', 'error'); redirect('mes-annonces.php'); }
-    // Le refuge ne peut editer que ses propres animaux
-    if (!a_role('admin')) {
+
+    if (a_role('admin')) {
+        // l'admin peut tout editer
+    } elseif (a_role('particulier')) {
+        if ((int) $animal['id_proprietaire'] !== user()['id']) {
+            http_response_code(403); flash('Acces refuse.', 'error'); redirect('mes-annonces.php');
+        }
+    } else { // refuge
         $own = $pdo->prepare("SELECT 1 FROM refuge WHERE id_refuge = :r AND id_utilisateur = :uid");
         $own->execute(['r' => $animal['id_refuge'], 'uid' => user()['id']]);
         if (!$own->fetch()) { http_response_code(403); flash('Acces refuse.', 'error'); redirect('mes-annonces.php'); }
@@ -44,6 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'nom'        => trim($_POST['nom'] ?? ''),
         'id_espece'  => (int) ($_POST['id_espece'] ?? 0),
         'id_refuge'  => (int) ($_POST['id_refuge'] ?? 0),
+        'detenteur_ville' => trim($_POST['detenteur_ville'] ?? ''),
         'race'       => trim($_POST['race'] ?? ''),
         'age_annees' => $_POST['age_annees'] !== '' ? (int) $_POST['age_annees'] : null,
         'sexe'       => in_array($_POST['sexe'] ?? '', ['M', 'F'], true) ? $_POST['sexe'] : null,
@@ -51,22 +62,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'ancien_proprietaire' => trim($_POST['ancien_proprietaire'] ?? ''),
         'description'=> trim($_POST['description'] ?? ''),
         'statut'     => in_array($_POST['statut'] ?? '', ['disponible','reserve','adopte'], true) ? $_POST['statut'] : 'disponible',
+        'photo'      => null,
     ];
 
-    // Validation
-    if ($animal['nom'] === '')        $erreurs[] = 'Le nom est obligatoire.';
-    if (!$animal['id_espece'])        $erreurs[] = 'Veuillez choisir une espece.';
-    if (!$animal['id_refuge'])        $erreurs[] = 'Veuillez choisir un refuge.';
+    // Validation commune
+    if ($animal['nom'] === '') $erreurs[] = 'Le nom est obligatoire.';
+    if (!$animal['id_espece']) $erreurs[] = 'Veuillez choisir une espece.';
     if ($animal['age_annees'] !== null && $animal['age_annees'] < 0) $erreurs[] = 'Age invalide.';
 
-    // Verifie que le refuge choisi appartient bien a l'utilisateur (sauf admin)
-    if (!a_role('admin') && $animal['id_refuge']) {
-        $own = $pdo->prepare("SELECT 1 FROM refuge WHERE id_refuge = :r AND id_utilisateur = :uid AND valide = 1");
-        $own->execute(['r' => $animal['id_refuge'], 'uid' => user()['id']]);
-        if (!$own->fetch()) $erreurs[] = 'Refuge invalide.';
+    if ($estParticulier) {
+        // Un particulier propose son propre animal : pas de refuge, mais une ville.
+        if ($animal['detenteur_ville'] === '') $erreurs[] = 'Veuillez indiquer votre ville.';
+    } else {
+        if (!$animal['id_refuge']) $erreurs[] = 'Veuillez choisir un refuge.';
+        // Le refuge choisi doit appartenir a l'utilisateur (sauf admin)
+        if (a_role('refuge') && $animal['id_refuge']) {
+            $own = $pdo->prepare("SELECT 1 FROM refuge WHERE id_refuge = :r AND id_utilisateur = :uid AND valide = 1");
+            $own->execute(['r' => $animal['id_refuge'], 'uid' => user()['id']]);
+            if (!$own->fetch()) $erreurs[] = 'Refuge invalide.';
+        }
     }
 
-    // Gestion de la photo : on garde l'existante en edition, on remplace si nouvel upload
+    // Photo : on garde l'existante en edition, on remplace si nouvel upload
     if ($edition) {
         $cur = $pdo->prepare("SELECT photo FROM animal WHERE id_animal = :id");
         $cur->execute(['id' => $id]);
@@ -93,21 +110,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (!$erreurs) {
-        if ($edition) {
-            $sql = "UPDATE animal SET nom=:nom, id_espece=:id_espece, id_refuge=:id_refuge,
-                       race=:race, age_annees=:age, sexe=:sexe, sterilise=:sterilise,
-                       ancien_proprietaire=:ancien, description=:desc, statut=:statut, photo=:photo
-                    WHERE id_animal=:id";
-            $params = ['id' => $id];
+        // On prepare les champs detenteur selon le type d'utilisateur
+        if ($estParticulier) {
+            $type = 'particulier'; $idRefuge = null; $idProprio = user()['id'];
+            $detNom = user()['prenom'] . ' ' . user()['nom']; $detVille = $animal['detenteur_ville'];
         } else {
-            $sql = "INSERT INTO animal (nom, id_espece, id_refuge, race, age_annees, sexe,
+            $type = 'refuge'; $idRefuge = $animal['id_refuge']; $idProprio = null;
+            $detNom = null; $detVille = null;
+        }
+
+        if ($edition) {
+            // En edition, on ne change pas le type de detenteur (on garde l'existant).
+            $sql = "UPDATE animal SET nom=:nom, id_espece=:id_espece, race=:race, age_annees=:age,
+                       sexe=:sexe, sterilise=:sterilise, ancien_proprietaire=:ancien,
+                       description=:desc, statut=:statut, photo=:photo, detenteur_ville=:dville
+                    WHERE id_animal=:id";
+            $params = ['id' => $id, 'dville' => $estParticulier ? $detVille : ($animal['detenteur_ville'] ?: null)];
+        } else {
+            $sql = "INSERT INTO animal (nom, id_espece, type_detenteur, id_refuge, id_proprietaire,
+                                        detenteur_nom, detenteur_ville, race, age_annees, sexe,
                                         sterilise, ancien_proprietaire, description, statut, photo)
-                    VALUES (:nom, :id_espece, :id_refuge, :race, :age, :sexe,
+                    VALUES (:nom, :id_espece, :type, :id_refuge, :id_proprio,
+                            :detnom, :dville, :race, :age, :sexe,
                             :sterilise, :ancien, :desc, :statut, :photo)";
-            $params = [];
+            $params = ['type' => $type, 'id_refuge' => $idRefuge, 'id_proprio' => $idProprio,
+                       'detnom' => $detNom, 'dville' => $detVille ?: null];
         }
         $params += [
-            'nom' => $animal['nom'], 'id_espece' => $animal['id_espece'], 'id_refuge' => $animal['id_refuge'],
+            'nom' => $animal['nom'], 'id_espece' => $animal['id_espece'],
             'race' => $animal['race'] ?: null, 'age' => $animal['age_annees'], 'sexe' => $animal['sexe'],
             'sterilise' => $animal['sterilise'], 'ancien' => $animal['ancien_proprietaire'] ?: null,
             'desc' => $animal['description'] ?: null, 'statut' => $animal['statut'],
@@ -124,7 +154,7 @@ require __DIR__ . '/includes/header.php';
 <div class="page-head"><div class="container"><h1><?= e($titre) ?></h1></div></div>
 <section>
     <div class="container">
-        <?php if (!$refuges): ?>
+        <?php if (!$estParticulier && !$refuges): ?>
             <div class="form-card">
                 <p>Vous n'avez pas (encore) de refuge <strong>valide</strong>.</p>
                 <p style="color:var(--texte-clair);margin-top:10px;">
@@ -152,17 +182,25 @@ require __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="form-group">
-                <label for="id_refuge">Refuge *</label>
-                <select id="id_refuge" name="id_refuge" required>
-                    <option value="">— Choisir —</option>
-                    <?php foreach ($refuges as $r): ?>
-                        <option value="<?= (int)$r['id_refuge'] ?>" <?= (int)$animal['id_refuge'] === (int)$r['id_refuge'] ? 'selected' : '' ?>>
-                            <?= e($r['nom']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
+            <?php if ($estParticulier): ?>
+                <div class="form-group">
+                    <label for="detenteur_ville">Votre ville *</label>
+                    <input type="text" id="detenteur_ville" name="detenteur_ville"
+                           value="<?= e($animal['detenteur_ville'] ?? '') ?>" placeholder="Ex : Paris" required>
+                </div>
+            <?php else: ?>
+                <div class="form-group">
+                    <label for="id_refuge">Refuge *</label>
+                    <select id="id_refuge" name="id_refuge" required>
+                        <option value="">— Choisir —</option>
+                        <?php foreach ($refuges as $r): ?>
+                            <option value="<?= (int)$r['id_refuge'] ?>" <?= (int)$animal['id_refuge'] === (int)$r['id_refuge'] ? 'selected' : '' ?>>
+                                <?= e($r['nom']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            <?php endif; ?>
             <div class="form-group">
                 <label for="race">Race</label>
                 <input type="text" id="race" name="race" value="<?= e($animal['race']) ?>">
